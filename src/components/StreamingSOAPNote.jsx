@@ -24,7 +24,7 @@ const SOAP_SECTIONS = [
   },
 ]
 
-const ICD_SUGGESTION = 'ICD-10 Suggestion: J06.9 - Acute upper respiratory infection, Vishal'
+const ICD_SUGGESTION = 'ICD-10 Suggestion: J06.9 - Acute upper respiratory infection, Unspecified'
 
 const tokenizedSections = SOAP_SECTIONS.map((section) => ({
   ...section,
