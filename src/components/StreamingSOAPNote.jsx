@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import useDemoStore from '../store/useDemoStore'
 
 const SOAP_SECTIONS = [
   {
@@ -37,8 +38,18 @@ const totalWords = tokenizedSections.reduce(
 )
 
 function StreamingSOAPNote({ sessionId, onComplete }) {
-  const [visibleWordCount, setVisibleWordCount] = useState(0)
-  const [hasReceivedFirstToken, setHasReceivedFirstToken] = useState(false)
+  const visibleWordCount = useDemoStore((state) => state.noteVisibleWordCount)
+  const hasReceivedFirstToken = useDemoStore(
+    (state) => state.noteHasReceivedFirstToken,
+  )
+  const noteCompleted = useDemoStore((state) => state.noteCompleted)
+  const setNoteVisibleWordCount = useDemoStore(
+    (state) => state.setNoteVisibleWordCount,
+  )
+  const setNoteHasReceivedFirstToken = useDemoStore(
+    (state) => state.setNoteHasReceivedFirstToken,
+  )
+  const markNoteCompleted = useDemoStore((state) => state.markNoteCompleted)
   const [isComplete, setIsComplete] = useState(false)
   const intervalRef = useRef(null)
   const firstTokenTimeoutRef = useRef(null)
@@ -71,9 +82,10 @@ function StreamingSOAPNote({ sessionId, onComplete }) {
   const finalizeStream = () => {
     window.clearTimeout(firstTokenTimeoutRef.current)
     window.clearInterval(intervalRef.current)
-    setVisibleWordCount(totalWords)
-    setHasReceivedFirstToken(true)
+    setNoteVisibleWordCount(totalWords)
+    setNoteHasReceivedFirstToken(true)
     setIsComplete(true)
+    markNoteCompleted()
 
     if (!completionNotifiedRef.current) {
       completionNotifiedRef.current = true
@@ -85,19 +97,29 @@ function StreamingSOAPNote({ sessionId, onComplete }) {
   }
 
   useEffect(() => {
-    firstTokenTimeoutRef.current = window.setTimeout(() => {
-      setHasReceivedFirstToken(true)
+    if (noteCompleted) {
+      setIsComplete(true)
+      return undefined
+    }
 
+    if (hasReceivedFirstToken) {
       intervalRef.current = window.setInterval(() => {
-        setVisibleWordCount((current) => Math.min(current + 3, totalWords))
+        const currentWordCount = useDemoStore.getState().noteVisibleWordCount
+        useDemoStore
+          .getState()
+          .setNoteVisibleWordCount(Math.min(currentWordCount + 3, totalWords))
       }, 240)
-    }, 900)
+    } else {
+      firstTokenTimeoutRef.current = window.setTimeout(() => {
+        setNoteHasReceivedFirstToken(true)
+      }, 900)
+    }
 
     return () => {
       window.clearTimeout(firstTokenTimeoutRef.current)
       window.clearInterval(intervalRef.current)
     }
-  }, [onComplete, sessionId])
+  }, [hasReceivedFirstToken, noteCompleted, setNoteHasReceivedFirstToken])
 
   useEffect(() => {
     if (visibleWordCount < totalWords) {
@@ -106,6 +128,7 @@ function StreamingSOAPNote({ sessionId, onComplete }) {
 
     window.clearInterval(intervalRef.current)
     setIsComplete(true)
+    markNoteCompleted()
 
     if (!completionNotifiedRef.current) {
       completionNotifiedRef.current = true
@@ -114,7 +137,12 @@ function StreamingSOAPNote({ sessionId, onComplete }) {
         totalWords,
       })
     }
-  }, [onComplete, sessionId, visibleWordCount])
+  }, [markNoteCompleted, onComplete, sessionId, visibleWordCount])
+
+  useEffect(() => {
+    completionNotifiedRef.current = false
+    setIsComplete(noteCompleted)
+  }, [noteCompleted, sessionId])
 
   return (
     <section className="glass-panel note-shadow flex h-full flex-col px-5 py-5 sm:px-6">

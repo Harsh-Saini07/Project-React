@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
 import AgentStepTracker from '../components/AgentStepTracker'
 import StreamingSOAPNote from '../components/StreamingSOAPNote'
 import useDemoStore from '../store/useDemoStore'
@@ -43,6 +42,7 @@ function DemoPage() {
     agentCompleted,
     noteCompleted,
     startDemo,
+    stopDemo,
     markAgentCompleted,
     markNoteCompleted,
   } = useDemoStore()
@@ -70,7 +70,7 @@ function DemoPage() {
             <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
               Press START to mount both components together. The tracker begins firing
               simulated agent events while the SOAP note streams in three-word chunks.
-              Use the second route to navigate away mid-run and verify cleanup.
+              Use STOP to clear the active run and return the workspace to its idle state.
             </p>
           </div>
 
@@ -82,12 +82,14 @@ function DemoPage() {
             >
               {runId === 0 ? 'START' : 'Restart Session'}
             </button>
-            <Link
-              to="/safe-zone"
+            <button
+              type="button"
+              onClick={stopDemo}
+              disabled={runId === 0}
               className="rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-sky-300 hover:text-sky-700"
             >
-              Navigate Away
-            </Link>
+              Stop
+            </button>
           </div>
         </div>
 

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import useDemoStore from '../store/useDemoStore'
 
 const FAKE_AGENT_EVENTS = [
   {
@@ -30,6 +31,7 @@ const FAKE_AGENT_EVENTS = [
 ]
 
 const formatElapsed = (value) => `${(value / 1000).toFixed(1)}s`
+const TOTAL_AGENT_STEPS = new Set(FAKE_AGENT_EVENTS.map((event) => event.step)).size
 
 function StepStatusIcon({ status }) {
   if (status === 'running') {
@@ -56,61 +58,86 @@ function StepStatusIcon({ status }) {
 }
 
 function AgentStepTracker({ onComplete }) {
-  const [events, setEvents] = useState([])
-  const [elapsedMs, setElapsedMs] = useState(0)
-  const startTimeRef = useRef(Date.now())
+  const runId = useDemoStore((state) => state.runId)
+  const events = useDemoStore((state) => state.agentEvents)
+  const eventCursor = useDemoStore((state) => state.agentEventCursor)
+  const elapsedMs = useDemoStore((state) => state.agentElapsedMs)
+  const agentCompleted = useDemoStore((state) => state.agentCompleted)
   const eventIntervalRef = useRef(null)
   const elapsedIntervalRef = useRef(null)
   const completionNotifiedRef = useRef(false)
+  const elapsedBaselineRef = useRef(0)
+  const resumeStartedAtRef = useRef(0)
 
   useEffect(() => {
-    startTimeRef.current = Date.now()
+    if (runId === 0 || agentCompleted) {
+      return undefined
+    }
+
+    elapsedBaselineRef.current = useDemoStore.getState().agentElapsedMs
+    resumeStartedAtRef.current = Date.now()
+
+    const persistElapsed = () => {
+      const totalElapsedMs =
+        elapsedBaselineRef.current + (Date.now() - resumeStartedAtRef.current)
+
+      useDemoStore.getState().setAgentElapsedMs(totalElapsedMs)
+      return totalElapsedMs
+    }
 
     elapsedIntervalRef.current = window.setInterval(() => {
-      setElapsedMs(Date.now() - startTimeRef.current)
+      persistElapsed()
     }, 100)
 
-    let index = 0
     eventIntervalRef.current = window.setInterval(() => {
-      setEvents((current) => {
-        const nextEvent = FAKE_AGENT_EVENTS[index]
+      const { agentEventCursor, agentEvents, addAgentEvent, markAgentCompleted } =
+        useDemoStore.getState()
+      const nextEvent = FAKE_AGENT_EVENTS[agentEventCursor]
 
-        if (!nextEvent) {
-          return current
-        }
-
-        const nextEvents = [...current, nextEvent]
-        const isFinished = index === FAKE_AGENT_EVENTS.length - 1
-
-        if (isFinished && !completionNotifiedRef.current) {
-          completionNotifiedRef.current = true
-          const payload = {
-            totalElapsedMs: Date.now() - startTimeRef.current,
-            events: nextEvents,
-          }
-
-          window.dispatchEvent(
-            new CustomEvent('agent-steps-complete', {
-              detail: payload,
-            }),
-          )
-          onComplete?.(payload)
-        }
-
-        index += 1
-        return nextEvents
-      })
-
-      if (index >= FAKE_AGENT_EVENTS.length) {
+      if (!nextEvent) {
         window.clearInterval(eventIntervalRef.current)
+        return
       }
+
+      const nextEvents = agentEvents.some((event) => event.step === nextEvent.step)
+        ? agentEvents.map((event) => (event.step === nextEvent.step ? nextEvent : event))
+        : [...agentEvents, nextEvent]
+      addAgentEvent(nextEvent)
+
+      const isFinished = agentEventCursor + 1 === FAKE_AGENT_EVENTS.length
+
+      if (!isFinished || completionNotifiedRef.current) {
+        return
+      }
+
+      completionNotifiedRef.current = true
+      const totalElapsedMs = persistElapsed()
+      const payload = {
+        totalElapsedMs,
+        events: nextEvents,
+      }
+
+      markAgentCompleted({ totalElapsedMs })
+      window.clearInterval(eventIntervalRef.current)
+      window.clearInterval(elapsedIntervalRef.current)
+      window.dispatchEvent(
+        new CustomEvent('agent-steps-complete', {
+          detail: payload,
+        }),
+      )
+      onComplete?.(payload)
     }, 1500)
 
     return () => {
+      persistElapsed()
       window.clearInterval(eventIntervalRef.current)
       window.clearInterval(elapsedIntervalRef.current)
     }
-  }, [onComplete])
+  }, [agentCompleted, onComplete, runId])
+
+  useEffect(() => {
+    completionNotifiedRef.current = false
+  }, [runId])
 
   const completedCount = useMemo(
     () => events.filter((event) => event.status === 'complete').length,
@@ -134,8 +161,8 @@ function AgentStepTracker({ onComplete }) {
         <div className="status-pill border-white/15 bg-white/5 text-slate-200">
           <span>{completedCount}</span>
           <span>/</span>
-          <span>{FAKE_AGENT_EVENTS.length}</span>
-          <span>events logged</span>
+          <span>{TOTAL_AGENT_STEPS}</span>
+          <span>steps completed</span>
         </div>
       </div>
 
